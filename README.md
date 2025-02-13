@@ -1,4 +1,4 @@
-# Unofficial Community Provider for Vercel AI SDK - Inflection AI
+# Unofficial Community Provider for AI SDK - Inflection AI
 
 The **[unofficial Inflection AI provider](https://www.npmjs.com/package/inflection-ai-sdk-provider)** for the [AI SDK](https://sdk.vercel.ai/docs) contains language model support for the [Inflection AI API](https://developers.inflection.ai/).
 

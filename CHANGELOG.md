@@ -11,3 +11,9 @@
 ### Patch Changes
 
 - Updated README
+
+## 1.0.2
+
+### Patch Changes
+
+- Updated README
