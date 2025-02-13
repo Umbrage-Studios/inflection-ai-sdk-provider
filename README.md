@@ -48,6 +48,6 @@ There is limited API support for features other than text generation and streami
 
 ## Documentation
 
-Please check out the **[Inflection AI provider](https://www.npmjs.com/package/inflection-ai-sdk-provider)** for more information.
-
 Please check out Inflection AI's [API Documentation](https://developers.inflection.ai/docs/api-reference) for more information.
+
+You can find the source code for this provider [here on GitHub](https://github.com/Umbrage-Studios/inflection-ai-sdk-provider).

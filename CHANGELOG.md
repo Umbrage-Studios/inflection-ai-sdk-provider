@@ -5,3 +5,9 @@
 ### Patch Changes
 
 - Initial release of Inflection AI provider
+
+## 1.0.1
+
+### Patch Changes
+
+- Updated README
