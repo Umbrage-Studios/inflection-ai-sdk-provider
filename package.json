@@ -1,6 +1,6 @@
 {
   "name": "inflection-ai-sdk-provider",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "license": "Apache-2.0",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -61,6 +61,11 @@
     "url": "https://github.com/Umbrage-Studios/inflection-ai-sdk-provider/issues"
   },
   "keywords": [
-    "ai"
+    "ai",
+    "inflection",
+    "inflection ai",
+    "inflection ai sdk",
+    "inflection ai sdk provider",
+    "inflection ai vercel sdk provider"
   ]
 }
