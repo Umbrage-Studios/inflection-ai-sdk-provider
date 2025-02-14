@@ -5,6 +5,26 @@ export type InflectionChatModelId =
   | "inflection_3_productivity"
   | (string & {});
 
+// Type for function parameters in tools
+export interface InflectionFunctionParameters {
+  type: "object";
+  properties: Record<string, unknown>;
+  required?: string[];
+}
+
+// Type for function definition in tools
+export interface InflectionFunction {
+  name: string;
+  description?: string;
+  parameters: InflectionFunctionParameters;
+}
+
+// Type for tool definition
+export interface InflectionTool {
+  type: "function";
+  function: InflectionFunction;
+}
+
 export interface InflectionChatSettings {
   /**
    * Optional metadata about the user that the AI can utilize
@@ -48,4 +68,9 @@ export interface InflectionChatSettings {
    * Controls diversity via nucleus sampling. Defaults to 0.95.
    */
   top_p?: number;
+
+  /**
+   * List of tools the model can use. Only supported when using the inflection_3_with_tools model.
+   */
+  tools?: InflectionTool[];
 }

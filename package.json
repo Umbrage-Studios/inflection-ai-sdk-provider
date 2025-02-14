@@ -1,6 +1,6 @@
 {
   "name": "inflection-ai-sdk-provider",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "license": "Apache-2.0",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -52,7 +52,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "homepage": "https://github.com/Umbrage-Studios/inflection-ai-sdk-provider",
+  "homepage": "https://sdk.vercel.ai/providers/community-providers/inflection-ai",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Umbrage-Studios/inflection-ai-sdk-provider.git"

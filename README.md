@@ -24,9 +24,33 @@ import { inflection } from "inflection-ai-sdk-provider";
 import { inflection } from "inflection-ai-sdk-provider";
 import { generateText } from "ai";
 
+// Basic text generation
 const { text } = await generateText({
   model: inflection("inflection_3_with_tools"),
   prompt: "how can I make quick chicken pho?",
+});
+
+// Using tool calls
+const { text: weatherText, toolCalls } = await generateText({
+  model: inflection("inflection_3_with_tools"),
+  prompt: "what's the weather in San Francisco?",
+  tools: [
+    {
+      type: "function",
+      name: "get_weather",
+      description: "Get the current weather in a location",
+      parameters: {
+        type: "object",
+        properties: {
+          location: {
+            type: "string",
+            description: "The city and state, e.g. San Francisco, CA",
+          },
+        },
+        required: ["location"],
+      },
+    },
+  ],
 });
 ```
 
@@ -36,15 +60,17 @@ The following models are supported:
 
 - `inflection_3_pi` - "the model powering our Pi experience, including a backstory, emotional intelligence, productivity, and safety. It excels in scenarios such as customer support chatbots."
 - `inflection_3_productivity`- "the model optimized for following instructions. It is better for tasks requiring JSON output or precise adherence to provided guidelines."
-- `inflection_3_with_tools` - This model seems to be in preview and it lacks an official description as of the writing of this README in 1.0.0.
+- `inflection_3_with_tools` - Model that supports function calling capabilities, allowing it to interact with external tools and APIs through a structured interface.
 
 | Model                       | Text Generation | Streaming | Image Input | Object Generation | Tool Usage | Tool Streaming |
 | --------------------------- | --------------- | --------- | ----------- | ----------------- | ---------- | -------------- |
 | `inflection_3_pi`           | ✓               | ✓         | ✗           | ✗                 | ✗          | ✗              |
 | `inflection_3_productivity` | ✓               | ✓         | ✗           | ✗                 | ✗          | ✗              |
-| `inflection_3_with_tools`   | ✓               | ✓         | ✗           | ✗                 | ✗          | ✗              |
+| `inflection_3_with_tools`   | ✓               | ✓         | ✗           | ✗                 | ✓          | ✓              |
 
-There is limited API support for features other than text generation and streaming text at this time. Should that change, the table above will be updated and support will be added to this unofficial provider.
+## Tool Calling Support
+
+The `inflection_3_with_tools` model supports function calling through the standard AI SDK tools interface. You can provide a list of tools when making requests, and the model can choose to call these tools as part of its response. Both streaming and non-streaming tool calls are supported.
 
 ## Documentation
 

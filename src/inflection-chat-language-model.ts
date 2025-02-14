@@ -3,6 +3,8 @@ import {
   LanguageModelV1CallWarning,
   LanguageModelV1FinishReason,
   LanguageModelV1StreamPart,
+  LanguageModelV1FunctionTool,
+  LanguageModelV1FunctionToolCall,
   UnsupportedFunctionalityError,
 } from "@ai-sdk/provider";
 import {
@@ -18,6 +20,7 @@ import { convertToInflectionChatMessages } from "./convert-to-inflection-chat-me
 import {
   InflectionChatModelId,
   InflectionChatSettings,
+  InflectionTool,
 } from "./inflection-chat-settings";
 import { inflectionFailedResponseHandler } from "./inflection-error";
 import { getResponseMetadata } from "./get-response-metadata";
@@ -42,7 +45,7 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
   constructor(
     modelId: InflectionChatModelId,
     settings: InflectionChatSettings,
-    config: InflectionChatConfig,
+    config: InflectionChatConfig
   ) {
     this.modelId = modelId;
     this.settings = settings;
@@ -65,12 +68,41 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
     const type = mode.type;
     const warnings: LanguageModelV1CallWarning[] = [];
 
-    // Throw error if trying to use tool-related modes
-    if (type === "object-tool" || (type === "regular" && mode.tools?.length)) {
+    // Only allow tools with inflection_3_with_tools model
+    if (
+      type === "regular" &&
+      mode.tools?.length &&
+      this.modelId !== "inflection_3_with_tools"
+    ) {
       throw new UnsupportedFunctionalityError({
-        functionality: "Tool calls are not supported by Inflection AI",
+        functionality:
+          "Tool calls are only supported with the inflection_3_with_tools model",
       });
     }
+
+    // Convert tools to Inflection format if present
+    const tools =
+      type === "regular" && mode.tools?.length
+        ? mode.tools
+            .filter(
+              (tool): tool is LanguageModelV1FunctionTool =>
+                tool.type === "function"
+            )
+            .map(
+              (tool): InflectionTool => ({
+                type: "function",
+                function: {
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: {
+                    type: "object",
+                    properties: tool.parameters.properties,
+                    required: tool.parameters.required,
+                  },
+                },
+              })
+            )
+        : undefined;
 
     const baseArgs = {
       // config instead of model:
@@ -87,14 +119,17 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
       metadata: this.settings.metadata,
 
       // context (messages):
-      context: convertToInflectionChatMessages(prompt),
+      context: convertToInflectionChatMessages(prompt, this.modelId),
+
+      // tools if present:
+      tools,
     };
 
     return { args: baseArgs, warnings };
   }
 
   async doGenerate(
-    options: Parameters<LanguageModelV1["doGenerate"]>[0],
+    options: Parameters<LanguageModelV1["doGenerate"]>[0]
   ): Promise<Awaited<ReturnType<LanguageModelV1["doGenerate"]>>> {
     const { args, warnings } = this.getArgs(options);
 
@@ -104,7 +139,7 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
       body: args,
       failedResponseHandler: inflectionFailedResponseHandler,
       successfulResponseHandler: createJsonResponseHandler(
-        inflectionChatResponseSchema,
+        inflectionChatResponseSchema
       ),
       abortSignal: options.abortSignal,
       fetch: this.config.fetch,
@@ -117,13 +152,24 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
     const promptTokens = Math.ceil(promptText.length / 4);
     const completionTokens = Math.ceil(response.text.length / 4);
 
+    // Convert tool calls to the expected format
+    const toolCalls = response.tool_calls?.map(
+      (call): LanguageModelV1FunctionToolCall => ({
+        toolCallType: "function",
+        toolCallId: call.id,
+        toolName: call.function.name,
+        args: JSON.parse(call.function.arguments),
+      })
+    );
+
     return {
       text: response.text,
-      finishReason: "stop",
+      finishReason: response.tool_calls?.length ? "tool-calls" : "stop",
       usage: {
         promptTokens,
         completionTokens,
       },
+      toolCalls,
       rawCall: { rawPrompt, rawSettings },
       rawResponse: { headers: responseHeaders },
       request: { body: JSON.stringify(args) },
@@ -133,7 +179,7 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
   }
 
   async doStream(
-    options: Parameters<LanguageModelV1["doStream"]>[0],
+    options: Parameters<LanguageModelV1["doStream"]>[0]
   ): Promise<Awaited<ReturnType<LanguageModelV1["doStream"]>>> {
     const { args, warnings } = this.getArgs(options);
 
@@ -145,7 +191,7 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
       body,
       failedResponseHandler: inflectionFailedResponseHandler,
       successfulResponseHandler: createEventSourceResponseHandler(
-        inflectionChatChunkSchema,
+        inflectionChatChunkSchema
       ),
       abortSignal: options.abortSignal,
       fetch: this.config.fetch,
@@ -184,6 +230,23 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
               type: "text-delta",
               textDelta: value.text,
             });
+
+            // If there are tool calls, enqueue them and update finish reason
+            if (value.tool_calls?.length) {
+              for (const call of value.tool_calls) {
+                const toolCall: LanguageModelV1FunctionToolCall = {
+                  toolCallType: "function",
+                  toolCallId: call.id,
+                  toolName: call.function.name,
+                  args: JSON.parse(call.function.arguments),
+                };
+                controller.enqueue({
+                  type: "tool-call",
+                  ...toolCall,
+                });
+              }
+              finishReason = "tool-calls";
+            }
           },
 
           flush(controller) {
@@ -196,7 +259,7 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
               },
             });
           },
-        }),
+        })
       ),
       rawCall: { rawPrompt, rawSettings },
       rawResponse: { headers: responseHeaders },
@@ -206,15 +269,25 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
   }
 }
 
-// limited version of the schema, focussed on what is needed for the implementation
+// Update response schemas to include tool calls
+const inflectionToolCallSchema = z.object({
+  id: z.string(),
+  type: z.literal("function"),
+  function: z.object({
+    name: z.string(),
+    arguments: z.string(),
+  }),
+});
+
 const inflectionChatResponseSchema = z.object({
   created: z.number(),
   text: z.string(),
+  tool_calls: z.array(inflectionToolCallSchema).optional(),
 });
 
-// limited version of the schema, focussed on what is needed for the implementation
 const inflectionChatChunkSchema = z.object({
   created: z.number(),
   idx: z.number(),
   text: z.string(),
+  tool_calls: z.array(inflectionToolCallSchema).optional(),
 });
