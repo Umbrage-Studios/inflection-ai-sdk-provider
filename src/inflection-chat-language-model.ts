@@ -190,22 +190,51 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
     options: Parameters<LanguageModelV1["doStream"]>[0]
   ): Promise<Awaited<ReturnType<LanguageModelV1["doStream"]>>> {
     const { args, warnings } = this.getArgs(options);
+    const { context: rawPrompt, ...rawSettings } = args;
 
-    const body = { ...args, stream: true };
+    // Check if we should use the OpenAI API endpoint
+    const useOpenAIEndpoint =
+      this.modelId === "inflection_3_with_tools" &&
+      options.mode.type === "regular" &&
+      (options.mode.tools?.length ?? 0) > 0;
+
+    const url = useOpenAIEndpoint
+      ? `${this.config.baseURL}/openai/v1/chat/completions`
+      : `${this.config.baseURL}/streaming`;
+
+    const body = useOpenAIEndpoint
+      ? {
+          model: this.modelId,
+          stream: true,
+          messages: convertPromptToOpenAIMessages(options.prompt),
+          tools:
+            options.mode.type === "regular"
+              ? options.mode.tools
+                  ?.map((tool) => {
+                    if (tool.type !== "function") return null;
+                    return {
+                      type: "function" as const,
+                      function: {
+                        name: tool.name,
+                        description: tool.description,
+                        parameters: tool.parameters,
+                      },
+                    };
+                  })
+                  .filter((t): t is NonNullable<typeof t> => t !== null)
+              : undefined,
+        }
+      : { ...args, stream: true };
 
     const { responseHeaders, value: response } = await postJsonToApi({
-      url: `${this.config.baseURL}/streaming`,
+      url,
       headers: combineHeaders(this.config.headers(), options.headers),
       body,
       failedResponseHandler: inflectionFailedResponseHandler,
-      successfulResponseHandler: createEventSourceResponseHandler(
-        inflectionChatChunkSchema
-      ),
+      successfulResponseHandler: createEventSourceResponseHandler(z.unknown()),
       abortSignal: options.abortSignal,
       fetch: this.config.fetch,
     });
-
-    const { context: rawPrompt, ...rawSettings } = args;
 
     let finishReason: LanguageModelV1FinishReason = "stop";
     const promptText = rawPrompt.map((m) => m.text).join("");
@@ -214,54 +243,119 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
 
     return {
       stream: response.pipeThrough(
-        new TransformStream<
-          ParseResult<z.infer<typeof inflectionChatChunkSchema>>,
-          LanguageModelV1StreamPart
-        >({
+        new TransformStream({
           transform(chunk, controller) {
             if (!chunk.success) {
               controller.enqueue({ type: "error", error: chunk.error });
               return;
             }
 
-            const value = chunk.value;
-            completionTokens += Math.ceil(value.text.length / 4);
+            try {
+              if (useOpenAIEndpoint) {
+                // Handle OpenAI API format
+                const value = openAIStreamChunkSchema.parse(chunk.value);
+                const choice = value.choices[0];
+                const delta = choice.delta;
 
-            if (chunk.value.idx === 0) {
-              controller.enqueue({
-                type: "response-metadata",
-                timestamp: new Date(value.created * 1000),
-              });
-            }
+                if (delta.content) {
+                  completionTokens += Math.ceil(delta.content.length / 4);
+                  controller.enqueue({
+                    type: "text-delta",
+                    textDelta: delta.content,
+                  });
+                }
 
-            controller.enqueue({
-              type: "text-delta",
-              textDelta: value.text,
-            });
+                if (delta.tool_calls?.length) {
+                  for (const call of delta.tool_calls) {
+                    try {
+                      // Emit tool-call-delta for the arguments
+                      controller.enqueue({
+                        type: "tool-call-delta",
+                        toolCallType: "function",
+                        toolCallId: call.id,
+                        toolName: call.function.name,
+                        argsTextDelta: call.function.arguments,
+                      });
 
-            // If there are tool calls, enqueue them and update finish reason
-            if (value.tool_calls?.length) {
-              for (const call of value.tool_calls) {
-                // For tool calls, we'll emit a text-delta with the tool call info
-                // This helps clients track the tool call progress
-                controller.enqueue({
-                  type: "text-delta",
-                  textDelta: `\nCalling tool: ${call.function.name}...`,
-                });
+                      // Try to parse the arguments to see if they're complete
+                      const args = JSON.parse(call.function.arguments);
+                      controller.enqueue({
+                        type: "tool-call",
+                        toolCallType: "function",
+                        toolCallId: call.id,
+                        toolName: call.function.name,
+                        args,
+                      });
+                    } catch (error) {
+                      // If JSON parsing fails, emit an error but don't break the stream
+                      controller.enqueue({
+                        type: "error",
+                        error: new Error(
+                          `Failed to process tool call: ${error instanceof Error ? error.message : "Unknown error"}`
+                        ),
+                      });
+                    }
+                  }
+                  finishReason = "tool-calls";
+                }
 
-                const toolCall: InflectionToolCallStreamPart = {
-                  type: "tool-call",
-                  toolCallType: "function",
-                  toolCallId: call.id,
-                  toolName: call.function.name,
-                  args: JSON.parse(call.function.arguments),
-                  created: value.created,
-                  idx: value.idx,
-                  text: value.text,
-                };
-                controller.enqueue(toolCall);
+                if (choice.finish_reason) {
+                  finishReason =
+                    choice.finish_reason === "tool_calls"
+                      ? "tool-calls"
+                      : choice.finish_reason === "content-filter"
+                        ? "content-filter"
+                        : choice.finish_reason;
+                }
+              } else {
+                // Handle Inflection API format
+                const value = inflectionStreamChunkSchema.parse(chunk.value);
+                completionTokens += Math.ceil(value.text.length / 4);
+
+                if (value.idx === 0) {
+                  controller.enqueue({
+                    type: "response-metadata",
+                    timestamp: new Date(value.created * 1000),
+                  });
+                }
+
+                if (value.text) {
+                  controller.enqueue({
+                    type: "text-delta",
+                    textDelta: value.text,
+                  });
+                }
+
+                if (value.tool_calls?.length) {
+                  for (const call of value.tool_calls) {
+                    try {
+                      const args = JSON.parse(call.function.arguments);
+                      controller.enqueue({
+                        type: "tool-call",
+                        toolCallType: "function",
+                        toolCallId: call.id,
+                        toolName: call.function.name,
+                        args,
+                      });
+                    } catch (error) {
+                      controller.enqueue({
+                        type: "error",
+                        error: new Error(
+                          `Failed to process tool call: ${error instanceof Error ? error.message : "Unknown error"}`
+                        ),
+                      });
+                    }
+                  }
+                  finishReason = "tool-calls";
+                }
               }
-              finishReason = "tool-calls";
+            } catch (error) {
+              controller.enqueue({
+                type: "error",
+                error: new Error(
+                  `Failed to parse response: ${error instanceof Error ? error.message : "Unknown error"}`
+                ),
+              });
             }
           },
 
@@ -305,13 +399,143 @@ const inflectionChatResponseSchema = z.object({
     .optional(),
 });
 
-const inflectionChatChunkSchema = z.object({
+const inflectionStreamChunkSchema = z.object({
   created: z.number(),
   idx: z.number(),
   text: z.string(),
   tool_calls: z
-    .array(inflectionToolCallSchema)
-    .nullable()
-    .transform((val) => val ?? [])
+    .array(
+      z.object({
+        id: z.string(),
+        type: z.literal("function"),
+        function: z.object({
+          name: z.string(),
+          arguments: z.string(),
+        }),
+      })
+    )
     .optional(),
+});
+
+type OpenAIStreamChunk = z.infer<typeof openAIStreamChunkSchema>;
+type InflectionStreamChunk = z.infer<typeof inflectionStreamChunkSchema>;
+
+// Helper function to convert internal prompt to OpenAI messages format
+function convertPromptToOpenAIMessages(
+  prompt: Parameters<LanguageModelV1["doGenerate"]>[0]["prompt"]
+): Array<{
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+  tool_calls?: Array<{
+    id: string;
+    type: "function";
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
+  tool_call_id?: string;
+}> {
+  return prompt.map(({ role, content }) => {
+    if (typeof content === "string") {
+      return { role, content };
+    }
+
+    let textContent = "";
+    const toolCalls: Array<{
+      id: string;
+      type: "function";
+      function: {
+        name: string;
+        arguments: string;
+      };
+    }> = [];
+
+    for (const part of content) {
+      switch (part.type) {
+        case "text":
+          textContent += part.text;
+          break;
+        case "tool-call":
+          toolCalls.push({
+            id: part.toolCallId,
+            type: "function",
+            function: {
+              name: part.toolName,
+              arguments: JSON.stringify(part.args),
+            },
+          });
+          break;
+        case "tool-result":
+          textContent = JSON.stringify(part.result);
+          break;
+        default:
+          // Skip other content types as they're not supported
+          break;
+      }
+    }
+
+    const message: {
+      role: typeof role;
+      content: string;
+      tool_calls?: typeof toolCalls;
+      tool_call_id?: string;
+    } = {
+      role,
+      content: textContent,
+    };
+
+    if (toolCalls.length > 0) {
+      message.tool_calls = toolCalls;
+    }
+
+    if (role === "tool") {
+      const toolResult = content.find(
+        (
+          part
+        ): part is {
+          type: "tool-result";
+          toolCallId: string;
+          toolName: string;
+          result: unknown;
+        } => part.type === "tool-result"
+      );
+      if (toolResult) {
+        message.tool_call_id = toolResult.toolCallId;
+      }
+    }
+
+    return message;
+  });
+}
+
+// Schema for OpenAI API streaming responses
+const openAIStreamChunkSchema = z.object({
+  id: z.string(),
+  object: z.literal("chat.completion.chunk"),
+  created: z.number(),
+  model: z.string(),
+  choices: z.array(
+    z.object({
+      index: z.number(),
+      delta: z.object({
+        content: z.string().optional(),
+        tool_calls: z
+          .array(
+            z.object({
+              id: z.string(),
+              type: z.literal("function"),
+              function: z.object({
+                name: z.string(),
+                arguments: z.string(),
+              }),
+            })
+          )
+          .optional(),
+      }),
+      finish_reason: z
+        .enum(["stop", "length", "content-filter", "tool_calls"])
+        .nullable(),
+    })
+  ),
 });

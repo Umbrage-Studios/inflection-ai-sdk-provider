@@ -3,10 +3,30 @@
 exports[`Tool Calling > should handle streaming with tool calls 1`] = `
 [
   {
-    "finishReason": "stop",
+    "textDelta": "Let me check the weather for you.",
+    "type": "text-delta",
+  },
+  {
+    "argsTextDelta": "{"location": "San Francisco, CA"}",
+    "toolCallId": "call_123",
+    "toolCallType": "function",
+    "toolName": "get_weather",
+    "type": "tool-call-delta",
+  },
+  {
+    "args": {
+      "location": "San Francisco, CA",
+    },
+    "toolCallId": "call_123",
+    "toolCallType": "function",
+    "toolName": "get_weather",
+    "type": "tool-call",
+  },
+  {
+    "finishReason": "tool-calls",
     "type": "finish",
     "usage": {
-      "completionTokens": 0,
+      "completionTokens": 9,
       "promptTokens": 2,
     },
   },

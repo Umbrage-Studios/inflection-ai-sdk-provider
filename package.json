@@ -1,6 +1,6 @@
 {
   "name": "inflection-ai-sdk-provider",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "license": "Apache-2.0",
   "sideEffects": false,
   "main": "./dist/index.js",
@@ -17,7 +17,7 @@
     "lint": "eslint \"./**/*.ts*\"",
     "type-check": "tsc --noEmit",
     "prettier-check": "prettier --check \"./**/*.ts*\"",
-    "test": "pnpm test:node && pnpm test:edge",
+    "test": "pnpm test:node \"$@\" && pnpm test:edge \"$@\"",
     "test:edge": "vitest --config vitest.edge.config.js --run",
     "test:node": "vitest --config vitest.node.config.js --run"
   },

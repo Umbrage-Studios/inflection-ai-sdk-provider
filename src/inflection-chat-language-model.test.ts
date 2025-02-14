@@ -13,6 +13,7 @@ const TEST_PROMPT: LanguageModelV1Prompt = [
 const INFERENCE_URL =
   "https://layercake.pubwestus3.inf7ks8.com/external/api/inference";
 const STREAMING_URL = `${INFERENCE_URL}/streaming`;
+const OPENAI_STREAMING_URL = `${INFERENCE_URL}/openai/v1/chat/completions`;
 
 // Sample tool for testing
 const TEST_TOOL = {
@@ -54,6 +55,15 @@ const server = createTestServer({
       ],
     },
   },
+  [OPENAI_STREAMING_URL]: {
+    response: {
+      type: "stream-chunks",
+      chunks: [
+        'data: {"id":"1","object":"chat.completion.chunk","created":1728094708,"model":"inflection_3_with_tools","choices":[{"index":0,"delta":{"content":"Let me check the weather for you."},"finish_reason":null}]}\n\n',
+        'data: {"id":"2","object":"chat.completion.chunk","created":1728094709,"model":"inflection_3_with_tools","choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_123","type":"function","function":{"name":"get_weather","arguments":"{\\"location\\": \\"San Francisco, CA\\"}"}}]},"finish_reason":"tool_calls"}]}\n\n',
+      ],
+    },
+  },
 });
 
 beforeEach(() => {
@@ -71,6 +81,13 @@ beforeEach(() => {
       '{"created": 1728094708.2514212, "idx": 0, "text": "Hello"}',
       '{"created": 1728094708.5789802, "idx": 1, "text": " there"}',
       '{"created": 1728094708.7364252, "idx": 2, "text": "!"}',
+    ],
+  };
+  server.urls[OPENAI_STREAMING_URL].response = {
+    type: "stream-chunks",
+    chunks: [
+      'data: {"id":"1","object":"chat.completion.chunk","created":1728094708,"model":"inflection_3_with_tools","choices":[{"index":0,"delta":{"content":"Let me check the weather for you."},"finish_reason":null}]}\n\n',
+      'data: {"id":"2","object":"chat.completion.chunk","created":1728094709,"model":"inflection_3_with_tools","choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_123","type":"function","function":{"name":"get_weather","arguments":"{\\"location\\": \\"San Francisco, CA\\"}"}}]},"finish_reason":"tool_calls"}]}\n\n',
     ],
   };
 });
@@ -275,32 +292,6 @@ describe("Tool Calling", () => {
   it("should handle streaming with tool calls", async () => {
     const model = provider.chat("inflection_3_with_tools");
 
-    server.urls[STREAMING_URL].response = {
-      type: "stream-chunks",
-      chunks: [
-        JSON.stringify({
-          created: 1728094708.2514212,
-          idx: 0,
-          text: "Let me check",
-        }),
-        JSON.stringify({
-          created: 1728094708.5789802,
-          idx: 1,
-          text: " the weather",
-          tool_calls: [
-            {
-              id: "call_123",
-              type: "function",
-              function: {
-                name: "get_weather",
-                arguments: '{"location": "San Francisco, CA"}',
-              },
-            },
-          ],
-        }),
-      ],
-    };
-
     const result = await model.doStream({
       inputFormat: "prompt",
       mode: {
@@ -362,14 +353,6 @@ describe("Tool Calling", () => {
   it("should properly format tool calls in streaming mode", async () => {
     const model = provider.chat("inflection_3_with_tools");
 
-    // Set up streaming response with tool calls
-    server.urls[STREAMING_URL].response = {
-      type: "stream-chunks",
-      chunks: [
-        'data: {"created": 1728094708.2514212, "idx": 0, "text": "Let me check the weather for you.", "tool_calls": [{"id": "call_123", "type": "function", "function": {"name": "get_weather", "arguments": "{\\"location\\": \\"San Francisco, CA\\"}"}}]}\n\n',
-      ],
-    };
-
     const result = await model.doStream({
       inputFormat: "prompt",
       mode: {
@@ -383,25 +366,25 @@ describe("Tool Calling", () => {
 
     // Verify the stream parts are properly formatted
     expect(parts).toContainEqual({
-      type: "response-metadata",
-      timestamp: new Date(1728094708.2514212 * 1000),
-    });
-
-    expect(parts).toContainEqual({
       type: "text-delta",
       textDelta: "Let me check the weather for you.",
     });
 
     // Verify tool call has all required fields
     expect(parts).toContainEqual({
+      type: "tool-call-delta",
+      toolCallType: "function",
+      toolCallId: "call_123",
+      toolName: "get_weather",
+      argsTextDelta: '{"location": "San Francisco, CA"}',
+    });
+
+    expect(parts).toContainEqual({
       type: "tool-call",
       toolCallType: "function",
       toolCallId: "call_123",
       toolName: "get_weather",
       args: { location: "San Francisco, CA" },
-      created: 1728094708.2514212,
-      idx: 0,
-      text: "Let me check the weather for you.",
     });
 
     // Verify finish part
