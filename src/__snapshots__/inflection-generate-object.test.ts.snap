@@ -1,0 +1,46 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`generateObject > should generate an array of objects 1`] = `
+[
+  {
+    "class": "warrior",
+    "description": "A mighty fighter",
+    "name": "Warrior",
+  },
+  {
+    "class": "mage",
+    "description": "A powerful spellcaster",
+    "name": "Mage",
+  },
+]
+`;
+
+exports[`generateObject > should generate an object using a schema 1`] = `
+{
+  "recipe": {
+    "ingredients": [
+      {
+        "amount": "1 package",
+        "name": "lasagna noodles",
+      },
+      {
+        "amount": "1 pound",
+        "name": "ground beef",
+      },
+    ],
+    "name": "Classic Lasagna",
+    "steps": [
+      "Boil noodles",
+      "Brown meat",
+    ],
+  },
+}
+`;
+
+exports[`generateObject > should handle no-schema output 1`] = `
+{
+  "recipe": {
+    "name": "Lasagna",
+  },
+}
+`;

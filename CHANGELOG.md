@@ -31,3 +31,10 @@
 - Added tool calling support for inflection_3_with_tools model
 - Added streaming tool call support
 - Updated documentation with tool calling examples and capabilities
+
+## 1.0.5
+
+### Patch Changes
+
+- Added generateObject function (including zod-to-json-schema dependency)
+- Updated documentation with usage examples

@@ -7,7 +7,7 @@ import {
 export function prepareTools(
   mode: Parameters<LanguageModelV1["doGenerate"]>[0]["mode"] & {
     type: "regular";
-  },
+  }
 ): {
   tools:
     | Array<{
@@ -78,7 +78,7 @@ export function prepareTools(
       // For specific tool selection, filter to just that tool and use 'any'
       return {
         tools: inflectionTools.filter(
-          (tool) => tool.function.name === toolChoice.toolName,
+          (tool) => tool.function.name === toolChoice.toolName
         ),
         tool_choice: "any",
         toolWarnings,

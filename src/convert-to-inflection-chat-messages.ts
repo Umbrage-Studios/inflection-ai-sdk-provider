@@ -120,7 +120,9 @@ export function convertToInflectionChatMessages(
         context.push({
           type: "AI",
           text,
-          ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+          ...(modelId === "inflection_3_with_tools" && toolCalls.length > 0
+            ? { tool_calls: toolCalls }
+            : {}),
         });
         break;
       }
