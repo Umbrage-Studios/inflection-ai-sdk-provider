@@ -12,5 +12,3 @@ exports[`assistant messages > should add prefix true to trailing assistant messa
   },
 ]
 `;
-
-exports[`tool calls > should stringify arguments to tool calls 1`] = `[]`;

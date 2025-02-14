@@ -14,6 +14,23 @@ const INFERENCE_URL =
   "https://layercake.pubwestus3.inf7ks8.com/external/api/inference";
 const STREAMING_URL = `${INFERENCE_URL}/streaming`;
 
+// Sample tool for testing
+const TEST_TOOL = {
+  type: "function" as const,
+  name: "get_weather",
+  description: "Get the current weather in a location",
+  parameters: {
+    type: "object",
+    properties: {
+      location: {
+        type: "string",
+        description: "The city and state, e.g. San Francisco, CA",
+      },
+    },
+    required: ["location"],
+  },
+};
+
 /**
  * Test server for mocking API responses
  */
@@ -100,8 +117,10 @@ describe("doGenerate", () => {
           ],
         },
         prompt: TEST_PROMPT,
-      }),
-    ).rejects.toThrow("Tool calls are not supported by Inflection AI");
+      })
+    ).rejects.toThrow(
+      "Tool calls are only supported with the inflection_3_with_tools model"
+    );
   });
 
   it("should extract usage", async () => {
@@ -142,5 +161,201 @@ describe("doStream", () => {
 
     const parts = await convertReadableStreamToArray(result.stream);
     expect(parts).toMatchSnapshot();
+  });
+});
+
+describe("Tool Calling", () => {
+  it("should allow tool calls with inflection_3_with_tools model", async () => {
+    const model = provider.chat("inflection_3_with_tools");
+
+    server.urls[INFERENCE_URL].response = {
+      type: "json-value",
+      body: {
+        created: 1714688002.0557644,
+        text: "Let me check the weather for you.",
+        tool_calls: [
+          {
+            id: "call_123",
+            type: "function",
+            function: {
+              name: "get_weather",
+              arguments: '{"location": "San Francisco, CA"}',
+            },
+          },
+        ],
+      },
+    };
+
+    const result = await model.doGenerate({
+      inputFormat: "prompt",
+      mode: {
+        type: "regular",
+        tools: [TEST_TOOL],
+      },
+      prompt: TEST_PROMPT,
+    });
+
+    expect(result.text).toBe("Let me check the weather for you.");
+    expect(result.toolCalls).toHaveLength(1);
+    expect(result.toolCalls?.[0]).toEqual({
+      toolCallType: "function",
+      toolCallId: "call_123",
+      toolName: "get_weather",
+      args: { location: "San Francisco, CA" },
+    });
+    expect(result.finishReason).toBe("tool-calls");
+  });
+
+  it("should allow empty tools array on any model", async () => {
+    const model = provider.chat("inflection_3_pi");
+
+    const result = await model.doGenerate({
+      inputFormat: "prompt",
+      mode: {
+        type: "regular",
+        tools: [], // Empty tools array
+      },
+      prompt: TEST_PROMPT,
+    });
+
+    expect(result.finishReason).toBe("stop");
+    expect(result.toolCalls).toBeUndefined();
+  });
+
+  it("should reject tool calls with other models", async () => {
+    const model = provider.chat("inflection_3_pi");
+
+    await expect(
+      model.doGenerate({
+        inputFormat: "prompt",
+        mode: {
+          type: "regular",
+          tools: [TEST_TOOL],
+        },
+        prompt: TEST_PROMPT,
+      })
+    ).rejects.toThrow(
+      "Tool calls are only supported with the inflection_3_with_tools model"
+    );
+  });
+
+  it("should handle malformed tool call responses", async () => {
+    const model = provider.chat("inflection_3_with_tools");
+
+    server.urls[INFERENCE_URL].response = {
+      type: "json-value",
+      body: {
+        created: 1714688002.0557644,
+        text: "Let me check the weather for you.",
+        tool_calls: [
+          {
+            id: "call_123",
+            type: "function",
+            function: {
+              name: "get_weather",
+              arguments: "invalid json here",
+            },
+          },
+        ],
+      },
+    };
+
+    await expect(
+      model.doGenerate({
+        inputFormat: "prompt",
+        mode: {
+          type: "regular",
+          tools: [TEST_TOOL],
+        },
+        prompt: TEST_PROMPT,
+      })
+    ).rejects.toThrow(); // Should throw when trying to parse invalid JSON
+  });
+
+  it("should handle streaming with tool calls", async () => {
+    const model = provider.chat("inflection_3_with_tools");
+
+    server.urls[STREAMING_URL].response = {
+      type: "stream-chunks",
+      chunks: [
+        JSON.stringify({
+          created: 1728094708.2514212,
+          idx: 0,
+          text: "Let me check",
+        }),
+        JSON.stringify({
+          created: 1728094708.5789802,
+          idx: 1,
+          text: " the weather",
+          tool_calls: [
+            {
+              id: "call_123",
+              type: "function",
+              function: {
+                name: "get_weather",
+                arguments: '{"location": "San Francisco, CA"}',
+              },
+            },
+          ],
+        }),
+      ],
+    };
+
+    const result = await model.doStream({
+      inputFormat: "prompt",
+      mode: {
+        type: "regular",
+        tools: [TEST_TOOL],
+      },
+      prompt: TEST_PROMPT,
+    });
+
+    const parts = await convertReadableStreamToArray(result.stream);
+    expect(parts).toMatchSnapshot();
+  });
+
+  it("should handle multiple tool calls in response", async () => {
+    const model = provider.chat("inflection_3_with_tools");
+
+    server.urls[INFERENCE_URL].response = {
+      type: "json-value",
+      body: {
+        created: 1714688002.0557644,
+        text: "Let me check multiple things.",
+        tool_calls: [
+          {
+            id: "call_123",
+            type: "function",
+            function: {
+              name: "get_weather",
+              arguments: '{"location": "San Francisco, CA"}',
+            },
+          },
+          {
+            id: "call_124",
+            type: "function",
+            function: {
+              name: "get_weather",
+              arguments: '{"location": "New York, NY"}',
+            },
+          },
+        ],
+      },
+    };
+
+    const result = await model.doGenerate({
+      inputFormat: "prompt",
+      mode: {
+        type: "regular",
+        tools: [TEST_TOOL],
+      },
+      prompt: TEST_PROMPT,
+    });
+
+    expect(result.toolCalls).toHaveLength(2);
+    expect(result.toolCalls?.map((call) => call.toolCallId)).toEqual([
+      "call_123",
+      "call_124",
+    ]);
   });
 });
