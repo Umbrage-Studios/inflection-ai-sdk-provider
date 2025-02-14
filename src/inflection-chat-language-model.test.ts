@@ -358,4 +358,60 @@ describe("Tool Calling", () => {
       "call_124",
     ]);
   });
+
+  it("should properly format tool calls in streaming mode", async () => {
+    const model = provider.chat("inflection_3_with_tools");
+
+    // Set up streaming response with tool calls
+    server.urls[STREAMING_URL].response = {
+      type: "stream-chunks",
+      chunks: [
+        'data: {"created": 1728094708.2514212, "idx": 0, "text": "Let me check the weather for you.", "tool_calls": [{"id": "call_123", "type": "function", "function": {"name": "get_weather", "arguments": "{\\"location\\": \\"San Francisco, CA\\"}"}}]}\n\n',
+      ],
+    };
+
+    const result = await model.doStream({
+      inputFormat: "prompt",
+      mode: {
+        type: "regular",
+        tools: [TEST_TOOL],
+      },
+      prompt: TEST_PROMPT,
+    });
+
+    const parts = await convertReadableStreamToArray(result.stream);
+
+    // Verify the stream parts are properly formatted
+    expect(parts).toContainEqual({
+      type: "response-metadata",
+      timestamp: new Date(1728094708.2514212 * 1000),
+    });
+
+    expect(parts).toContainEqual({
+      type: "text-delta",
+      textDelta: "Let me check the weather for you.",
+    });
+
+    // Verify tool call has all required fields
+    expect(parts).toContainEqual({
+      type: "tool-call",
+      toolCallType: "function",
+      toolCallId: "call_123",
+      toolName: "get_weather",
+      args: { location: "San Francisco, CA" },
+      created: 1728094708.2514212,
+      idx: 0,
+      text: "Let me check the weather for you.",
+    });
+
+    // Verify finish part
+    expect(parts).toContainEqual({
+      type: "finish",
+      finishReason: "tool-calls",
+      usage: {
+        promptTokens: expect.any(Number),
+        completionTokens: expect.any(Number),
+      },
+    });
+  });
 });

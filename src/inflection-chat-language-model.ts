@@ -32,6 +32,14 @@ type InflectionChatConfig = {
   fetch?: FetchFunction;
 };
 
+// Custom type for tool call stream part that includes required fields
+type InflectionToolCallStreamPart = {
+  type: "tool-call";
+  created: number;
+  idx: number;
+  text: string;
+} & LanguageModelV1FunctionToolCall;
+
 export class InflectionChatLanguageModel implements LanguageModelV1 {
   readonly specificationVersion = "v1";
   readonly defaultObjectGenerationMode = "json";
@@ -234,16 +242,24 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
             // If there are tool calls, enqueue them and update finish reason
             if (value.tool_calls?.length) {
               for (const call of value.tool_calls) {
-                const toolCall: LanguageModelV1FunctionToolCall = {
+                // For tool calls, we'll emit a text-delta with the tool call info
+                // This helps clients track the tool call progress
+                controller.enqueue({
+                  type: "text-delta",
+                  textDelta: `\nCalling tool: ${call.function.name}...`,
+                });
+
+                const toolCall: InflectionToolCallStreamPart = {
+                  type: "tool-call",
                   toolCallType: "function",
                   toolCallId: call.id,
                   toolName: call.function.name,
                   args: JSON.parse(call.function.arguments),
+                  created: value.created,
+                  idx: value.idx,
+                  text: value.text,
                 };
-                controller.enqueue({
-                  type: "tool-call",
-                  ...toolCall,
-                });
+                controller.enqueue(toolCall);
               }
               finishReason = "tool-calls";
             }

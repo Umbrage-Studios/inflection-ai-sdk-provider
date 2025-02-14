@@ -44,3 +44,9 @@
 ### Patch Changes
 
 - Fixed handling of null tool_calls in responses by converting them to empty arrays
+
+## 1.0.7
+
+### Patch Changes
+
+- Maybe fixed bugs for streaming tool calls
