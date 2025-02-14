@@ -7,6 +7,14 @@ exports[`Tool Calling > should handle streaming with tool calls 1`] = `
     "type": "text-delta",
   },
   {
+    "finishReason": "stop",
+    "type": "finish",
+    "usage": {
+      "completionTokens": 9,
+      "promptTokens": 2,
+    },
+  },
+  {
     "argsTextDelta": "{"location": "San Francisco, CA"}",
     "toolCallId": "call_123",
     "toolCallType": "function",
@@ -33,15 +41,4 @@ exports[`Tool Calling > should handle streaming with tool calls 1`] = `
 ]
 `;
 
-exports[`doStream > should stream text deltas 1`] = `
-[
-  {
-    "finishReason": "stop",
-    "type": "finish",
-    "usage": {
-      "completionTokens": 0,
-      "promptTokens": 2,
-    },
-  },
-]
-`;
+exports[`doStream > should stream text deltas 1`] = `[]`;

@@ -49,9 +49,9 @@ const server = createTestServer({
     response: {
       type: "stream-chunks",
       chunks: [
-        '{"created": 1728094708.2514212, "idx": 0, "text": "Hello"}',
-        '{"created": 1728094708.5789802, "idx": 1, "text": " there"}',
-        '{"created": 1728094708.7364252, "idx": 2, "text": "!"}',
+        'data: {"created": 1728094708.2514212, "idx": 0, "text": "Hello"}\n\n',
+        'data: {"created": 1728094708.5789802, "idx": 1, "text": " there"}\n\n',
+        'data: {"created": 1728094708.7364252, "idx": 2, "text": "!"}\n\n',
       ],
     },
   },
@@ -59,8 +59,49 @@ const server = createTestServer({
     response: {
       type: "stream-chunks",
       chunks: [
-        'data: {"id":"1","object":"chat.completion.chunk","created":1728094708,"model":"inflection_3_with_tools","choices":[{"index":0,"delta":{"content":"Let me check the weather for you."},"finish_reason":null}]}\n\n',
-        'data: {"id":"2","object":"chat.completion.chunk","created":1728094709,"model":"inflection_3_with_tools","choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_123","type":"function","function":{"name":"get_weather","arguments":"{\\"location\\": \\"San Francisco, CA\\"}"}}]},"finish_reason":"tool_calls"}]}\n\n',
+        "data: " +
+          JSON.stringify({
+            id: "1",
+            object: "chat.completion.chunk",
+            created: 1728094708,
+            model: "inflection_3_with_tools",
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  content: "Let me check the weather for you.",
+                },
+                finish_reason: null,
+              },
+            ],
+          }) +
+          "\n\n",
+        "data: " +
+          JSON.stringify({
+            id: "2",
+            object: "chat.completion.chunk",
+            created: 1728094709,
+            model: "inflection_3_with_tools",
+            choices: [
+              {
+                index: 0,
+                delta: {
+                  tool_calls: [
+                    {
+                      id: "call_123",
+                      type: "function",
+                      function: {
+                        name: "get_weather",
+                        arguments: '{"location": "San Francisco, CA"}',
+                      },
+                    },
+                  ],
+                },
+                finish_reason: "tool_calls",
+              },
+            ],
+          }) +
+          "\n\n",
       ],
     },
   },
@@ -78,16 +119,57 @@ beforeEach(() => {
   server.urls[STREAMING_URL].response = {
     type: "stream-chunks",
     chunks: [
-      '{"created": 1728094708.2514212, "idx": 0, "text": "Hello"}',
-      '{"created": 1728094708.5789802, "idx": 1, "text": " there"}',
-      '{"created": 1728094708.7364252, "idx": 2, "text": "!"}',
+      'data: {"created": 1728094708.2514212, "idx": 0, "text": "Hello"}\n\n',
+      'data: {"created": 1728094708.5789802, "idx": 1, "text": " there"}\n\n',
+      'data: {"created": 1728094708.7364252, "idx": 2, "text": "!"}\n\n',
     ],
   };
   server.urls[OPENAI_STREAMING_URL].response = {
     type: "stream-chunks",
     chunks: [
-      'data: {"id":"1","object":"chat.completion.chunk","created":1728094708,"model":"inflection_3_with_tools","choices":[{"index":0,"delta":{"content":"Let me check the weather for you."},"finish_reason":null}]}\n\n',
-      'data: {"id":"2","object":"chat.completion.chunk","created":1728094709,"model":"inflection_3_with_tools","choices":[{"index":0,"delta":{"tool_calls":[{"id":"call_123","type":"function","function":{"name":"get_weather","arguments":"{\\"location\\": \\"San Francisco, CA\\"}"}}]},"finish_reason":"tool_calls"}]}\n\n',
+      "data: " +
+        JSON.stringify({
+          id: "1",
+          object: "chat.completion.chunk",
+          created: 1728094708,
+          model: "inflection_3_with_tools",
+          choices: [
+            {
+              index: 0,
+              delta: {
+                content: "Let me check the weather for you.",
+              },
+              finish_reason: null,
+            },
+          ],
+        }) +
+        "\n\n",
+      "data: " +
+        JSON.stringify({
+          id: "2",
+          object: "chat.completion.chunk",
+          created: 1728094709,
+          model: "inflection_3_with_tools",
+          choices: [
+            {
+              index: 0,
+              delta: {
+                tool_calls: [
+                  {
+                    id: "call_123",
+                    type: "function",
+                    function: {
+                      name: "get_weather",
+                      arguments: '{"location": "San Francisco, CA"}',
+                    },
+                  },
+                ],
+              },
+              finish_reason: "tool_calls",
+            },
+          ],
+        }) +
+        "\n\n",
     ],
   };
 });

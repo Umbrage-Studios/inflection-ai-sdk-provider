@@ -251,9 +251,10 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
             }
 
             try {
-              if (useOpenAIEndpoint) {
-                // Handle OpenAI API format
-                const value = openAIStreamChunkSchema.parse(chunk.value);
+              const value = inflectionStreamChunkSchema.parse(chunk.value);
+
+              // Handle OpenAI format
+              if (value.object === "chat.completion.chunk") {
                 const choice = value.choices[0];
                 const delta = choice.delta;
 
@@ -303,23 +304,13 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
                   finishReason =
                     choice.finish_reason === "tool_calls"
                       ? "tool-calls"
-                      : choice.finish_reason === "content-filter"
-                        ? "content-filter"
-                        : choice.finish_reason;
+                      : choice.finish_reason;
                 }
-              } else {
-                // Handle Inflection API format
-                const value = inflectionStreamChunkSchema.parse(chunk.value);
-                completionTokens += Math.ceil(value.text.length / 4);
-
-                if (value.idx === 0) {
-                  controller.enqueue({
-                    type: "response-metadata",
-                    timestamp: new Date(value.created * 1000),
-                  });
-                }
-
+              }
+              // Handle Inflection native format
+              else {
                 if (value.text) {
+                  completionTokens += Math.ceil(value.text.length / 4);
                   controller.enqueue({
                     type: "text-delta",
                     textDelta: value.text,
@@ -329,6 +320,16 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
                 if (value.tool_calls?.length) {
                   for (const call of value.tool_calls) {
                     try {
+                      // Emit tool-call-delta for the arguments
+                      controller.enqueue({
+                        type: "tool-call-delta",
+                        toolCallType: "function",
+                        toolCallId: call.id,
+                        toolName: call.function.name,
+                        argsTextDelta: call.function.arguments,
+                      });
+
+                      // Try to parse the arguments to see if they're complete
                       const args = JSON.parse(call.function.arguments);
                       controller.enqueue({
                         type: "tool-call",
@@ -349,6 +350,16 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
                   finishReason = "tool-calls";
                 }
               }
+
+              // Emit finish event at the end of each chunk
+              controller.enqueue({
+                type: "finish",
+                finishReason,
+                usage: {
+                  promptTokens,
+                  completionTokens,
+                },
+              });
             } catch (error) {
               controller.enqueue({
                 type: "error",
@@ -357,17 +368,6 @@ export class InflectionChatLanguageModel implements LanguageModelV1 {
                 ),
               });
             }
-          },
-
-          flush(controller) {
-            controller.enqueue({
-              type: "finish",
-              finishReason,
-              usage: {
-                promptTokens,
-                completionTokens,
-              },
-            });
           },
         })
       ),
@@ -399,23 +399,58 @@ const inflectionChatResponseSchema = z.object({
     .optional(),
 });
 
-const inflectionStreamChunkSchema = z.object({
-  created: z.number(),
-  idx: z.number(),
-  text: z.string(),
-  tool_calls: z
-    .array(
+// Update stream chunk schema to handle both formats
+const inflectionStreamChunkSchema = z.discriminatedUnion("object", [
+  // OpenAI format
+  z.object({
+    object: z.literal("chat.completion.chunk"),
+    id: z.string(),
+    created: z.number(),
+    model: z.string(),
+    choices: z.array(
       z.object({
-        id: z.string(),
-        type: z.literal("function"),
-        function: z.object({
-          name: z.string(),
-          arguments: z.string(),
+        index: z.number(),
+        delta: z.object({
+          content: z.string().optional(),
+          tool_calls: z
+            .array(
+              z.object({
+                id: z.string(),
+                type: z.literal("function"),
+                function: z.object({
+                  name: z.string(),
+                  arguments: z.string(),
+                }),
+              })
+            )
+            .optional(),
         }),
+        finish_reason: z
+          .enum(["stop", "length", "content-filter", "tool_calls"])
+          .nullable(),
       })
-    )
-    .optional(),
-});
+    ),
+  }),
+  // Inflection native format
+  z.object({
+    object: z.undefined(),
+    created: z.number(),
+    idx: z.number(),
+    text: z.string().optional(),
+    tool_calls: z
+      .array(
+        z.object({
+          id: z.string(),
+          type: z.literal("function"),
+          function: z.object({
+            name: z.string(),
+            arguments: z.string(),
+          }),
+        })
+      )
+      .optional(),
+  }),
+]);
 
 type OpenAIStreamChunk = z.infer<typeof openAIStreamChunkSchema>;
 type InflectionStreamChunk = z.infer<typeof inflectionStreamChunkSchema>;

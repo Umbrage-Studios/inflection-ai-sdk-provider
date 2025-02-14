@@ -60,3 +60,13 @@
 - Added proper schema validation for OpenAI responses
 - Updated tests to cover both endpoints
 - Fixed error handling and response parsing for both formats
+
+## 1.0.9
+
+### Patch Changes
+
+- Fixed streaming tool call support for both Inflection native and OpenAI-compatible formats
+- Updated schema validation to properly handle streaming tool call responses
+- Improved error handling for malformed tool call arguments
+- Added proper tool-call-delta events for streaming tool calls
+- Fixed response parsing issues with missing or null fields
