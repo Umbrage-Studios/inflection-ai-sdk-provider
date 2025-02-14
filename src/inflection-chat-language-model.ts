@@ -282,12 +282,20 @@ const inflectionToolCallSchema = z.object({
 const inflectionChatResponseSchema = z.object({
   created: z.number(),
   text: z.string(),
-  tool_calls: z.array(inflectionToolCallSchema).optional(),
+  tool_calls: z
+    .array(inflectionToolCallSchema)
+    .nullable()
+    .transform((val) => val ?? [])
+    .optional(),
 });
 
 const inflectionChatChunkSchema = z.object({
   created: z.number(),
   idx: z.number(),
   text: z.string(),
-  tool_calls: z.array(inflectionToolCallSchema).optional(),
+  tool_calls: z
+    .array(inflectionToolCallSchema)
+    .nullable()
+    .transform((val) => val ?? [])
+    .optional(),
 });

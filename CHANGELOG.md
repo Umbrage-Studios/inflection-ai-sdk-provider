@@ -38,3 +38,9 @@
 
 - Added generateObject function (including zod-to-json-schema dependency)
 - Updated documentation with usage examples
+
+## 1.0.6
+
+### Patch Changes
+
+- Fixed handling of null tool_calls in responses by converting them to empty arrays
